@@ -1,5 +1,5 @@
-use bytes::{buf::BufMutExt, Bytes, BytesMut};
-use protobuf::{parse_from_carllerche_bytes, Message};
+use bytes::{Bytes, BufMut, BytesMut};
+use protobuf::Message;
 use uuid::Uuid;
 
 use crate::internal::command::Cmd;
@@ -109,7 +109,7 @@ impl Pkg {
     where
         M: Message,
     {
-        parse_from_carllerche_bytes(&self.payload).map_err(|e| e.into())
+        Message::parse_from_bytes(&self.payload).map_err(|e| e.into())
     }
 
     pub fn build_text(self) -> String {

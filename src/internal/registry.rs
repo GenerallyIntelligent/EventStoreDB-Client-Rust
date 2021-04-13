@@ -114,8 +114,8 @@ impl Registry {
 
                     let result = pkg.to_message::<messages::NotHandled>().and_then(|msg| {
                         if let messages::NotHandled_NotHandledReason::NotMaster = msg.get_reason() {
-                            let master_info =
-                                protobuf::parse_from_bytes::<messages::NotHandled_MasterInfo>(
+                            let master_info: messages::NotHandled_MasterInfo =
+                                protobuf::Message::parse_from_bytes(
                                     msg.get_additional_info(),
                                 )?;
 

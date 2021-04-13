@@ -7,7 +7,7 @@ edition = "2018"
 # Uncomment if you want to update messages.rs code-gen.
 # We disabled codegen.rs because it requires having `protoc` installed on your machine
 # in order to build that library.
-# build = "codegen.rs"
+build = "codegen.rs"
 
 license = "MIT"
 description = "EventStore TCP client"
@@ -44,20 +44,20 @@ tls = [
 ]
 
 [dependencies]
-tokio = { version = "0.2", features = ["net", "stream", "time"] }
-tokio-byteorder = "0.2"
+tokio = { version = "1", features = ["net", "time"] }
+tokio-byteorder = "0.3"
 futures = "0.3"
 uuid = { version  = "0.8", features = [ "v4", "serde" ] }
-bytes = "0.5"
-protobuf = { version = "2.10", features = ["with-bytes"] }
-serde = "1.0"
-serde_json = "1.0"
-serde_derive = "1.0"
+bytes = "1"
+protobuf = { version = "2.22", features = ["with-bytes"] }
+serde = "1"
+serde_json = "1"
+serde_derive = "1"
 log = "0.4"
-reqwest = { version = "0.10", features = ["json"] }
+reqwest = { version = "0.11", features = ["json"] }
 vec1 = "1.4"
-rand = { version = "0.7", features = ["getrandom", "small_rng"] }
-byteorder = { version = "1.2", optional = true }
+rand = { version = "0.8", features = ["getrandom", "small_rng"] }
+byteorder = { version = "1.3", optional = true }
 http = { version = "0.2", optional = true }
 tonic = { version = "0.3", features = ["tls", "tls-roots"], optional = true }
 prost = { version = "0.6", optional = true }
@@ -67,7 +67,7 @@ rustls = { version = "0.18", features = ["dangerous_configuration"], optional = 
 webpki = { version = "0.21", optional = true }
 base64 = { version = "^0.11", optional = true }
 tokio-rustls = { version = "0.14", optional = true }
-trust-dns-resolver = "0.19"
+trust-dns-resolver = "0.20"
 
 [build-dependencies]
 protoc-rust = "2.16"
@@ -77,8 +77,8 @@ tonic-build = "0.2"
 name = "integration"
 
 [dev-dependencies]
-env_logger = "0.6"
-tokio-test = "0.2"
+env_logger = "0.8"
+tokio-test = "0.4"
 
 [package.metadata.docs.rs]
 all-features = true

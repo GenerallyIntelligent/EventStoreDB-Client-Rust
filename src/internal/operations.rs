@@ -12,7 +12,7 @@ use crate::internal::messages;
 use crate::internal::messaging::{Lifetime, Mailbox, Msg, OpMsg};
 use crate::internal::package::Pkg;
 use crate::types::{self, Credentials, OperationError};
-use bytes::{buf::BufMutExt, BytesMut};
+use bytes::{BufMut, BytesMut};
 use futures::channel::{mpsc, oneshot};
 use futures::sink::SinkExt;
 use futures::stream::{Stream, StreamExt};

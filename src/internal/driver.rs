@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 
 use futures::channel::mpsc::Sender;
 use futures::sink::SinkExt;
-use futures::stream::StreamExt;
 use uuid::Uuid;
 
 use crate::internal::command::Cmd;
@@ -198,11 +197,12 @@ impl Driver {
         self.phase = Phase::Reconnecting;
 
         let tick_period = Duration::from_millis(200);
-        let mut tick = tokio::time::interval(tick_period);
+        let mut ticker = tokio::time::interval(tick_period);
         let mut sender = self.sender.clone();
 
         tokio::spawn(async move {
-            while tick.next().await.is_some() {
+            loop {
+                ticker.tick().await;
                 let _ = sender.send(Msg::Tick).await;
             }
         });
