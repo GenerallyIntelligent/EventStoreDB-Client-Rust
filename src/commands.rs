@@ -14,7 +14,7 @@ use shared::{Empty, StreamIdentifier, Uuid};
 use streams::streams_client::StreamsClient;
 
 use crate::batch::BatchAppendClient;
-use crate::grpc::{handle_error, GrpcClient};
+use crate::grpc::{handle_error, GrpcClient, Msg};
 use crate::options::append_to_stream::AppendToStreamOptions;
 use crate::options::batch_append::BatchAppendOptions;
 use crate::options::persistent_subscription::PersistentSubscriptionOptions;
@@ -28,7 +28,7 @@ use crate::{
     SystemConsumerStrategy, TombstoneStreamOptions,
 };
 use futures::stream::BoxStream;
-use tonic::Request;
+use tonic::{Request, Streaming};
 
 pub(crate) mod defaults {
     use std::time::Duration;
@@ -718,13 +718,54 @@ pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> Ba
     batch_client
 }
 
+pub struct ReadStream {
+    sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    channel_id: uuid::Uuid,
+    inner: Streaming<crate::event_store::client::streams::ReadResp>,
+}
+
+impl ReadStream {
+    pub async fn next_event(&mut self) -> crate::Result<Option<ResolvedEvent>> {
+        loop {
+            match self.inner.try_next().await.map_err(crate::Error::from_grpc) {
+                Err(e) => {
+                    handle_error(&self.sender, self.channel_id, &e).await;
+                    return Err(e);
+                }
+
+                Ok(resp) => {
+                    if let Some(resp) = resp {
+                        if let streams::read_resp::Content::Event(event) =
+                            resp.content.expect("content is defined")
+                        {
+                            return Ok(Some(convert_proto_read_event(event)));
+                        }
+
+                        continue;
+                    }
+
+                    return Ok(None);
+                }
+            }
+        }
+    }
+
+    pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<ResolvedEvent>> {
+        try_stream! {
+            while let Some(event) = self.next_event().await? {
+                yield event;
+            }
+        }
+    }
+}
+
 /// Sends asynchronously the read command to the server.
-pub async fn read_stream<'a, S: AsRef<str>>(
+pub async fn read_stream<S: AsRef<str>>(
     connection: GrpcClient,
     options: &ReadStreamOptions,
     stream: S,
     count: u64,
-) -> BoxStream<'a, crate::Result<ResolvedEvent>> {
+) -> crate::Result<ReadStream> {
     use streams::read_req::options::stream_options::RevisionOption;
     use streams::read_req::options::{self, StreamOption, StreamOptions};
     use streams::read_req::Options;
@@ -775,59 +816,31 @@ pub async fn read_stream<'a, S: AsRef<str>>(
 
     configure_auth_req(&mut req, credentials);
 
-    let stream = try_stream! {
-        let (conn_id, mut stream) = connection.execute(|channel| async {
-            let id = channel.id();
-            let mut client = StreamsClient::new(channel.channel);
-            let resp = client.read(req).await?;
+    let handle = connection.current_selected_node().await?;
+    let channel_id = handle.id();
+    let mut client = StreamsClient::new(handle.channel);
 
-            Ok((id, resp.into_inner()))
-        }).await?;
+    match client.read(req).await {
+        Err(status) => {
+            let e = crate::Error::from_grpc(status);
+            handle_error(&connection.sender, channel_id, &e).await;
 
-        if let Some(resp) = stream.try_next().await.map_err(crate::Error::from_grpc)? {
-            match resp.content.as_ref().unwrap() {
-                streams::read_resp::Content::StreamNotFound(_) => Err(crate::Error::ResourceNotFound)?,
-
-                _ => {
-                    if let streams::read_resp::Content::Event(event) = resp.content.expect("content is defined") {
-                        yield convert_proto_read_event(event);
-                    }
-
-                    loop {
-                        match stream.try_next().await {
-                            Err(e) => {
-                                let e = crate::Error::from_grpc(e);
-
-                                handle_error(&connection.sender, conn_id, &e).await;
-                                Err(e)?;
-                            }
-
-                            Ok(resp) => {
-                                if let Some(resp) = resp {
-                                    if let streams::read_resp::Content::Event(event) = resp.content.expect("content is defined") {
-                                        yield convert_proto_read_event(event);
-                                    }
-
-                                    continue;
-                                }
-
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            Err(e)
         }
-    };
 
-    Box::pin(stream)
+        Ok(resp) => Ok(ReadStream {
+            sender: connection.sender.clone(),
+            channel_id,
+            inner: resp.into_inner(),
+        }),
+    }
 }
 
-pub async fn read_all<'a>(
+pub async fn read_all(
     connection: GrpcClient,
     options: &ReadAllOptions,
     count: u64,
-) -> BoxStream<'a, crate::Result<ResolvedEvent>> {
+) -> crate::Result<ReadStream> {
     use streams::read_req::options::all_options::AllOption;
     use streams::read_req::options::{self, AllOptions, StreamOption};
     use streams::read_req::Options;
@@ -882,39 +895,24 @@ pub async fn read_all<'a>(
 
     configure_auth_req(&mut req, credentials);
 
-    let stream = try_stream! {
-        let (conn_id, mut stream) = connection.execute(|channel| async {
-            let id = channel.id();
-            let mut client = StreamsClient::new(channel.channel);
-            let stream = client.read(req).await?.into_inner();
+    let handle = connection.current_selected_node().await?;
+    let channel_id = handle.id();
+    let mut client = StreamsClient::new(handle.channel);
 
-            Ok((id, stream))
-        }).await?;
+    match client.read(req).await {
+        Err(status) => {
+            let e = crate::Error::from_grpc(status);
+            handle_error(&connection.sender, channel_id, &e).await;
 
-        loop {
-            match stream.try_next().await {
-                Err(e) => {
-                    let e = crate::Error::from_grpc(e);
-                    handle_error(&connection.sender, conn_id, &e).await;
-                    Err(e)?;
-                }
-
-                Ok(resp) => {
-                    if let Some(resp) = resp {
-                        if let streams::read_resp::Content::Event(event) = resp.content.expect("content is defined") {
-                            yield convert_proto_read_event(event);
-                        }
-
-                        continue;
-                    }
-
-                    break;
-                }
-            }
+            Err(e)
         }
-    };
 
-    Box::pin(stream)
+        Ok(resp) => Ok(ReadStream {
+            sender: connection.sender.clone(),
+            channel_id,
+            inner: resp.into_inner(),
+        }),
+    }
 }
 
 /// Sends asynchronously the delete command to the server.

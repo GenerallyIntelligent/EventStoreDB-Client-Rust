@@ -7,7 +7,6 @@ use eventstore::{
     All, Client, Credentials, EventData, ExpectedRevision, Position, ReadAllOptions,
     ReadStreamOptions, Single, StreamPosition,
 };
-use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use uuid::Uuid;
@@ -25,11 +24,11 @@ pub async fn read_from_stream(client: &Client) -> Result<()> {
     let options = ReadStreamOptions::default()
         .position(StreamPosition::Start)
         .forwards();
-    let mut stream = client.read_stream("some-stream", &options, All).await;
+    let mut stream = client.read_stream("some-stream", &options, All).await?;
     // endregion read-from-stream
 
     // region iterate-stream
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         let test_event = event.get_original_event().as_json::<TestEvent>()?;
 
         println!("Event> {:?}", test_event);
@@ -42,11 +41,11 @@ pub async fn read_from_stream(client: &Client) -> Result<()> {
 pub async fn read_from_stream_position(client: &Client) -> Result<()> {
     // region read-from-position
     let options = ReadStreamOptions::default().position(StreamPosition::Position(10));
-    let mut stream = client.read_stream("some-stream", &options, 20).await;
+    let mut stream = client.read_stream("some-stream", &options, 20).await?;
     // endregion read-from-position
 
     // region iterate-stream
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         let test_event = event.get_original_event().as_json::<TestEvent>()?;
 
         println!("Event> {:?}", test_event);
@@ -71,9 +70,9 @@ pub async fn read_from_stream_position_check(client: &Client) -> Result<()> {
     // region checking-for-stream-presence
     let options = ReadStreamOptions::default().position(StreamPosition::Position(10));
 
-    let mut stream = client.read_stream("some-stream", &options, All).await;
+    let mut stream = client.read_stream("some-stream", &options, All).await?;
 
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         let test_event = event.get_original_event().as_json::<TestEvent>()?;
 
         println!("Event> {:?}", test_event);
@@ -87,9 +86,9 @@ pub async fn read_stream_backwards(client: &Client) -> Result<()> {
     let options = ReadStreamOptions::default()
         .position(StreamPosition::End)
         .backwards();
-    let mut stream = client.read_stream("some-stream", &options, All).await;
+    let mut stream = client.read_stream("some-stream", &options, All).await?;
 
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         let test_event = event.get_original_event().as_json::<TestEvent>()?;
 
         println!("Event> {:?}", test_event);
@@ -104,11 +103,11 @@ pub async fn read_from_all_stream(client: &Client) -> Result<()> {
     let options = ReadAllOptions::default()
         .position(StreamPosition::Start)
         .forwards();
-    let mut stream = client.read_all(&Default::default(), All).await;
+    let mut stream = client.read_all(&Default::default(), All).await?;
     // endregion read-from-all-stream
 
     // region read-from-all-stream-iterate
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         println!("Event> {:?}", event.get_original_event());
     }
     // endregion read-from-all-stream-iterate
@@ -132,9 +131,9 @@ pub async fn read_all_overriding_user_credentials(client: &Client) -> Result<()>
 
 pub async fn ignore_system_events(client: &Client) -> Result<()> {
     // region ignore-system-events
-    let mut stream = client.read_all(&Default::default(), All).await;
+    let mut stream = client.read_all(&Default::default(), All).await?;
 
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         if event.get_original_event().event_type.starts_with("$") {
             continue;
         }
@@ -150,11 +149,11 @@ pub async fn read_from_all_stream_backwards(client: &Client) -> Result<()> {
     // region read-from-all-stream-backwards
     let options = ReadAllOptions::default().position(StreamPosition::End);
 
-    let mut stream = client.read_all(&options, All).await;
+    let mut stream = client.read_all(&options, All).await?;
     // endregion read-from-all-stream-backwards
 
     // region read-from-all-stream-iterate
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         println!("Event> {:?}", event.get_original_event());
     }
     // endregion read-from-all-stream-iterate
@@ -163,9 +162,9 @@ pub async fn read_from_all_stream_backwards(client: &Client) -> Result<()> {
 }
 
 pub async fn filtering_out_system_events(client: &Client) -> Result<()> {
-    let mut stream = client.read_all(&Default::default(), All).await;
+    let mut stream = client.read_all(&Default::default(), All).await?;
 
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         if !event.get_original_event().event_type.starts_with("$") {
             continue;
         }
@@ -178,7 +177,7 @@ pub async fn filtering_out_system_events(client: &Client) -> Result<()> {
 pub async fn read_from_stream_resolving_link_tos(client: &Client) -> Result<()> {
     // region read-from-all-stream-resolving-link-Tos
     let options = ReadAllOptions::default().resolve_link_tos();
-    client.read_all(&options, All).await;
+    client.read_all(&options, All).await?;
     // endregion read-from-all-stream-resolving-link-Tos
     Ok(())
 }

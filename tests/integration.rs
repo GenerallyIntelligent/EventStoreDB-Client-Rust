@@ -54,7 +54,7 @@ async fn test_write_events(client: &Client) -> Result<(), Box<dyn Error>> {
 // We read all stream events by batch.
 async fn test_read_all_stream_events(client: &Client) -> Result<(), Box<dyn Error>> {
     // Eventstore should always have "some" events in $all, since eventstore itself uses streams, ouroboros style.
-    client.read_all(&Default::default(), Single).await?;
+    client.read_all(&Default::default(), Single).await??;
 
     Ok(())
 }
@@ -72,9 +72,9 @@ async fn test_read_stream_events(client: &Client) -> Result<(), Box<dyn Error>> 
     let mut pos = 0usize;
     let mut idx = 0i64;
 
-    let mut stream = client.read_stream(stream_id, &Default::default(), 10).await;
+    let mut stream = client.read_stream(stream_id, &Default::default(), 10).await?;
 
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         let event = event.get_original_event();
         let obj: HashMap<String, i64> = event.as_json().unwrap();
         let value = obj.get("event_index").unwrap();
@@ -190,9 +190,9 @@ async fn test_tombstone_stream(client: &Client) -> Result<(), Box<dyn Error>> {
 
     let mut stream = client
         .read_stream(stream_id.as_str(), &Default::default(), 1)
-        .await;
+        .await?;
 
-    if let Err(eventstore::Error::ResourceDeleted) = stream.try_next().await {
+    if let Err(eventstore::Error::ResourceDeleted) = stream.next_event().await {
         Ok(())
     } else {
         panic!("Expected stream deleted error");
@@ -666,11 +666,11 @@ async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
             .position(eventstore::StreamPosition::Start);
         let mut stream = client
             .read_stream(stream_id.as_str(), &options, eventstore::All)
-            .await;
+            .await?;
 
         let mut cpt = 0usize;
 
-        while let Some(_) = stream.try_next().await? {
+        while let Some(_) = stream.next_event().await? {
             cpt += 1;
         }
 

@@ -7,7 +7,6 @@
 use eventstore::{
     AppendToStreamOptions, Client, Credentials, EventData, ExpectedRevision, ReadStreamOptions,
 };
-use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use uuid::Uuid;
@@ -56,9 +55,9 @@ pub async fn run() -> Result<()> {
     // region readStream
     let mut stream = client
         .read_stream("some-stream", &Default::default(), 10)
-        .await;
+        .await?;
 
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = stream.next_event().await? {
         // Doing something productive with the events.
     }
     // endregion readStream

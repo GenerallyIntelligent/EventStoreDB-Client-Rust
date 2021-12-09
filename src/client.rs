@@ -91,9 +91,9 @@ impl Client {
         stream_name: impl AsRef<str>,
         options: &ReadStreamOptions,
         count: Count,
-    ) -> Count::Selection
+    ) -> crate::Result<Count::Selection>
     where
-        Count: ToCount<'static>,
+        Count: ToCount,
     {
         let stream = commands::read_stream(
             self.client.clone(),
@@ -101,21 +101,21 @@ impl Client {
             stream_name,
             count.to_count() as u64,
         )
-        .await;
+        .await?;
 
-        count.select(stream).await
+        Ok(count.select(stream).await)
     }
 
     /// Reads events for the system stream `$all`. The reading can be done
     /// forward and backward.
-    pub async fn read_all<Count>(&self, options: &ReadAllOptions, count: Count) -> Count::Selection
+    pub async fn read_all<Count>(&self, options: &ReadAllOptions, count: Count) -> crate::Result<Count::Selection>
     where
-        Count: ToCount<'static>,
+        Count: ToCount,
     {
         let stream =
-            commands::read_all(self.client.clone(), options, count.to_count() as u64).await;
+            commands::read_all(self.client.clone(), options, count.to_count() as u64).await?;
 
-        count.select(stream).await
+        Ok(count.select(stream).await)
     }
 
     /// Reads a stream metadata.
@@ -126,7 +126,7 @@ impl Client {
     ) -> crate::Result<StreamMetadataResult> {
         let result = self
             .read_stream(format!("$${}", stream_name.as_ref()), options, Single)
-            .await;
+            .await?;
 
         match result {
             Ok(event) => {
