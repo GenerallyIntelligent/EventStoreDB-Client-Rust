@@ -772,27 +772,41 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
         count += 1;
 
         debug!("Checking if admin user is available...{}/50", count);
-        match client
-            .read_stream("$users", &Default::default(), Single)
-            .await
-        {
-            Ok(_) => {
-                debug!("Completed.");
-                return Ok(());
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            client.read_stream("$users", &Default::default(), Single),
+        )
+        .await;
+
+        match result {
+            Err(_) => {
+                debug!("Request timed out, retrying...");
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
-            Err(e) => match e {
-                eventstore::Error::AccessDenied
-                | eventstore::Error::DeadlineExceeded
-                | eventstore::Error::ServerError(_)
-                | eventstore::Error::ResourceNotFound => {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+            Ok(result) => match result.and_then(|r| r) {
+                Err(
+                    eventstore::Error::AccessDenied
+                    | eventstore::Error::DeadlineExceeded
+                    | eventstore::Error::ServerError(_)
+                    | eventstore::Error::ResourceNotFound,
+                ) => {
                     debug!("Not available retrying...");
-                    continue;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
                 }
 
-                e => return Err(e),
+                Err(e) => return Err(e),
+
+                Ok(opt) => {
+                    if opt.is_some() {
+                        return Ok(());
+                    }
+
+                    debug!("$users stream seems to be empty, retrying...");
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
             },
-        };
+        }
     }
 
     Err(eventstore::Error::ServerError(
