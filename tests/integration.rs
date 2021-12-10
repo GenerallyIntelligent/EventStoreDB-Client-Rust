@@ -806,6 +806,7 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
 
                 Ok(opt) => {
                     if opt.is_some() {
+                        debug!("Admin account is available!");
                         return Ok(());
                     }
 
@@ -863,7 +864,7 @@ async fn wait_for_leader_to_be_elected(client: &eventstore::Client) -> eventstor
 
             return Err(e);
         } else {
-            debug!("Completed.");
+            debug!("Election cycle is completed!");
             return Ok(());
         }
     }
