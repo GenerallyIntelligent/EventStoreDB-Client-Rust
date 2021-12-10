@@ -782,6 +782,7 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
             }
             Err(e) => match e {
                 eventstore::Error::AccessDenied
+                | eventstore::Error::DeadlineExceeded
                 | eventstore::Error::ServerError(_)
                 | eventstore::Error::ResourceNotFound => {
                     tokio::time::sleep(Duration::from_millis(500)).await;
