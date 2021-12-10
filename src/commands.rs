@@ -718,6 +718,13 @@ pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> Ba
     batch_client
 }
 
+pub enum ReadEvent {
+    Event(ResolvedEvent),
+    FirstStreamPosition(u64),
+    LastStreamPosition(u64),
+    LastAllStreamPosition(Position),
+}
+
 #[derive(Debug)]
 pub struct ReadStream {
     sender: futures::channel::mpsc::UnboundedSender<Msg>,
@@ -726,7 +733,7 @@ pub struct ReadStream {
 }
 
 impl ReadStream {
-    pub async fn next_event(&mut self) -> crate::Result<Option<ResolvedEvent>> {
+    pub async fn next(&mut self) -> crate::Result<Option<ReadEvent>> {
         loop {
             match self.inner.try_next().await.map_err(crate::Error::from_grpc) {
                 Err(e) => {
@@ -741,7 +748,20 @@ impl ReadStream {
                                 return Err(crate::Error::ResourceNotFound)
                             }
                             streams::read_resp::Content::Event(event) => {
-                                return Ok(Some(convert_proto_read_event(event)))
+                                return Ok(Some(ReadEvent::Event(convert_proto_read_event(event))))
+                            }
+
+                            streams::read_resp::Content::FirstStreamPosition(event_number) => {
+                                return Ok(Some(ReadEvent::FirstStreamPosition(event_number)));
+                            }
+                            streams::read_resp::Content::LastStreamPosition(event_number) => {
+                                return Ok(Some(ReadEvent::LastStreamPosition(event_number)));
+                            }
+                            streams::read_resp::Content::LastAllStreamPosition(position) => {
+                                return Ok(Some(ReadEvent::LastAllStreamPosition(Position {
+                                    commit: position.commit_position,
+                                    prepare: position.prepare_position,
+                                })));
                             }
                             _ => continue,
                         }
@@ -753,7 +773,25 @@ impl ReadStream {
         }
     }
 
-    pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<ResolvedEvent>> {
+    pub async fn next_event(&mut self) -> crate::Result<Option<ResolvedEvent>> {
+        loop {
+            while let Some(event) = self.next().await? {
+                if let ReadEvent::Event(event) = event {
+                    return Ok(Some(event));
+                }
+            }
+        }
+    }
+
+    pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<ReadEvent>> {
+        try_stream! {
+            while let Some(event) = self.next().await? {
+                yield event;
+            }
+        }
+    }
+
+    pub fn into_stream_of_event(mut self) -> impl Stream<Item = crate::Result<ResolvedEvent>> {
         try_stream! {
             while let Some(event) = self.next_event().await? {
                 yield event;
