@@ -188,11 +188,11 @@ async fn test_tombstone_stream(client: &Client) -> Result<(), Box<dyn Error>> {
 
     debug!("Tombstone stream [{}] result: {:?}", stream_id, result);
 
-    let mut stream = client
+    let result = client
         .read_stream(stream_id.as_str(), &Default::default(), 1)
-        .await?;
+        .await;
 
-    if let Err(eventstore::Error::ResourceDeleted) = stream.next_event().await {
+    if let Err(eventstore::Error::ResourceDeleted) = result {
         Ok(())
     } else {
         panic!("Expected stream deleted error");

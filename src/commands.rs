@@ -718,6 +718,7 @@ pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> Ba
     batch_client
 }
 
+#[derive(Debug)]
 pub struct ReadStream {
     sender: futures::channel::mpsc::UnboundedSender<Msg>,
     channel_id: uuid::Uuid,
@@ -1160,6 +1161,19 @@ fn retryable_subscription<'a>(
     };
 
     Box::pin(stream)
+}
+
+#[derive(Debug)]
+pub struct Subscription {
+    sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    channel_id: uuid::Uuid,
+    inner: Streaming<crate::event_store::client::streams::ReadResp>,
+}
+
+impl Subscription {
+    pub async fn next_event(&mut self) -> crate::Result<ResolvedEvent> {
+        todo!()
+    }
 }
 
 /// Runs the subscription command.
