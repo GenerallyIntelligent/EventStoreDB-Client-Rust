@@ -748,7 +748,9 @@ impl ReadStream {
                                 return Err(crate::Error::ResourceNotFound)
                             }
                             streams::read_resp::Content::Event(event) => {
-                                return Ok(Some(ReadEvent::Event(Box::new(convert_proto_read_event(event)))))
+                                return Ok(Some(ReadEvent::Event(Box::new(
+                                    convert_proto_read_event(event),
+                                ))))
                             }
 
                             streams::read_resp::Content::FirstStreamPosition(event_number) => {
@@ -782,7 +784,7 @@ impl ReadStream {
             continue;
         }
 
-        return Ok(None);
+        Ok(None)
     }
 
     pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<ReadEvent>> {
