@@ -779,7 +779,11 @@ impl ReadStream {
                 if let ReadEvent::Event(event) = event {
                     return Ok(Some(event));
                 }
+
+                continue;
             }
+
+            return Ok(None);
         }
     }
 
