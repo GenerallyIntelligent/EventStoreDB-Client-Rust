@@ -719,7 +719,7 @@ pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> Ba
 }
 
 pub enum ReadEvent {
-    Event(ResolvedEvent),
+    Event(Box<ResolvedEvent>),
     FirstStreamPosition(u64),
     LastStreamPosition(u64),
     LastAllStreamPosition(Position),
@@ -748,7 +748,7 @@ impl ReadStream {
                                 return Err(crate::Error::ResourceNotFound)
                             }
                             streams::read_resp::Content::Event(event) => {
-                                return Ok(Some(ReadEvent::Event(convert_proto_read_event(event))))
+                                return Ok(Some(ReadEvent::Event(Box::new(convert_proto_read_event(event)))))
                             }
 
                             streams::read_resp::Content::FirstStreamPosition(event_number) => {
@@ -774,17 +774,15 @@ impl ReadStream {
     }
 
     pub async fn next_event(&mut self) -> crate::Result<Option<ResolvedEvent>> {
-        loop {
-            while let Some(event) = self.next().await? {
-                if let ReadEvent::Event(event) = event {
-                    return Ok(Some(event));
-                }
-
-                continue;
+        while let Some(event) = self.next().await? {
+            if let ReadEvent::Event(event) = event {
+                return Ok(Some(*event));
             }
 
-            return Ok(None);
+            continue;
         }
+
+        return Ok(None);
     }
 
     pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<ReadEvent>> {
