@@ -735,13 +735,15 @@ impl ReadStream {
 
                 Ok(resp) => {
                     if let Some(resp) = resp {
-                        if let streams::read_resp::Content::Event(event) =
-                            resp.content.expect("content is defined")
-                        {
-                            return Ok(Some(convert_proto_read_event(event)));
+                        match resp.content.unwrap() {
+                            streams::read_resp::Content::StreamNotFound(_) => {
+                                return Err(crate::Error::ResourceNotFound)
+                            }
+                            streams::read_resp::Content::Event(event) => {
+                                return Ok(Some(convert_proto_read_event(event)))
+                            }
+                            _ => continue,
                         }
-
-                        continue;
                     }
 
                     return Ok(None);
