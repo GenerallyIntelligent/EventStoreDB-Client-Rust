@@ -766,6 +766,15 @@ async fn wait_node_is_alive(port: u16) -> Result<(), Box<dyn std::error::Error>>
 // This function assumes that we are using the admin credentials. It's possible during CI that
 // the cluster hasn't created the admin user yet, leading to failing the tests.
 async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventstore::Result<()> {
+    fn can_retry(e: &eventstore::Error) -> bool {
+        match e {
+            eventstore::Error::AccessDenied
+            | eventstore::Error::DeadlineExceeded
+            | eventstore::Error::ServerError(_)
+            | eventstore::Error::ResourceNotFound => true,
+            _ => false,
+        }
+    }
     let mut count = 0;
 
     while count < 50 {
@@ -785,17 +794,15 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
             }
 
             Ok(result) => match result.and_then(|r| r) {
-                Err(
-                    eventstore::Error::AccessDenied
-                    | eventstore::Error::DeadlineExceeded
-                    | eventstore::Error::ServerError(_)
-                    | eventstore::Error::ResourceNotFound,
-                ) => {
-                    debug!("Not available retrying...");
+                Err(e) if can_retry(&e) => {
+                    debug!("Not available: {:?}, retrying...", e);
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
 
-                Err(e) => return Err(e),
+                Err(e) => {
+                    debug!("Fatal error, stop retrying. Cause: {:?}", e);
+                    return Err(e);
+                },
 
                 Ok(opt) => {
                     if opt.is_some() {

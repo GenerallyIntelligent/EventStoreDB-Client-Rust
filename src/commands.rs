@@ -867,7 +867,9 @@ pub async fn read_stream<S: AsRef<str>>(
 
     match client.read(req).await {
         Err(status) => {
+            debug!("__> Status error: {:?}", status);
             let e = crate::Error::from_grpc(status);
+            debug!("__> Error: {:?}", e);
             handle_error(&connection.sender, channel_id, &e).await;
 
             Err(e)
