@@ -1042,146 +1042,216 @@ pub async fn tombstone_stream<S: AsRef<str>>(
         .await
 }
 
-fn retryable_subscription<'a>(
-    connection: GrpcClient,
-    retry: Option<RetryOptions>,
-    credentials: Option<Credentials>,
-    mut options: streams::read_req::Options,
-) -> BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>> {
-    use streams::read_req::options::all_options::AllOption;
-    use streams::read_req::options::stream_options::RevisionOption;
-    use streams::read_req::options::{self, StreamOption};
-
-    let (limit, delay, retry_enabled) = if let Some(retry) = retry {
-        (retry.limit, retry.delay, true)
-    } else {
-        (1, Default::default(), false)
-    };
-
-    let stream = try_stream! {
-        let mut attempts = 1;
-        loop {
-            let mut req = Request::new(streams::ReadReq {
-                options: Some(options.clone()),
-            });
-
-            configure_auth_req(&mut req, credentials.as_ref().cloned());
-
-            let result = connection.execute(|channel| async move {
-                let id = channel.id();
-                let mut client = StreamsClient::new(channel.channel);
-                let stream = client.read(req).await?.into_inner();
-
-                Ok((id, stream))
-            }).await;
-
-            match result {
-                Err(e) => {
-                    if attempts < limit {
-                        error!("Subscription: attempt ({}/{}) failure, cause: {}, retrying...", attempts, limit, e);
-                        attempts += 1;
-                        tokio::time::sleep(delay).await;
-                        continue;
-                    }
-
-                    if retry_enabled {
-                        error!("Subscription: maximum retry threshold reached, cause: {}", e);
-                    }
-
-                    Err(e)?;
-                }
-
-                Ok((id, mut stream)) => {
-                    let mut failed = false;
-                    while !failed {
-                        match stream.try_next().await {
-                            Err(status) => {
-                                let e = crate::Error::from_grpc(status);
-
-                                handle_error(&connection.sender, id, &e).await;
-
-                                failed = true;
-                                attempts = 1;
-
-                                error!("Subscription dropped. cause: {}", e);
-                                if !retry_enabled {
-                                    Err(e)?;
-                                }
-                            }
-
-                            Ok(resp) => {
-                                if let Some(msg) = resp.and_then(|r| r.content) {
-                                    match msg {
-                                        streams::read_resp::Content::Event(event) => {
-                                            let event = convert_proto_read_event(event);
-                                            let stream_options = options
-                                                .stream_option
-                                                .as_mut()
-                                                .unwrap();
-
-                                            match stream_options {
-                                                StreamOption::Stream(stream_options) => {
-                                                    let revision = RevisionOption::Revision(event.get_original_event().revision as u64);
-                                                    stream_options.revision_option = Some(revision);
-
-                                                    yield SubEvent::EventAppeared(event);
-                                                }
-
-                                                StreamOption::All(all_options) => {
-                                                    let position = event.get_original_event().position;
-                                                    let position = options::Position {
-                                                        prepare_position: position.prepare,
-                                                        commit_position: position.commit,
-                                                    };
-
-                                                    all_options.all_option = Some(AllOption::Position(position));
-                                                }
-                                            }
-                                        }
-
-                                        streams::read_resp::Content::Confirmation(info) => {
-                                            yield SubEvent::Confirmed(info.subscription_id);
-                                        }
-
-                                        _ => {}
-                                    }
-                                    continue;
-                                }
-
-                                error!("Unexpected behavior, the subscription ended like it was a regular read operation!");
-                                unreachable!();
-                            }
-                        }
-                    }
-
-                    attempts += 1;
-                }
-            }
-        }
-    };
-
-    Box::pin(stream)
-}
-
-#[derive(Debug)]
 pub struct Subscription {
-    sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    connection: GrpcClient,
     channel_id: uuid::Uuid,
-    inner: Streaming<crate::event_store::client::streams::ReadResp>,
+    stream: Option<Streaming<crate::event_store::client::streams::ReadResp>>,
+    attempts: usize,
+    limit: usize,
+    retry_enabled: bool,
+    delay: std::time::Duration,
+    options: streams::read_req::Options,
+    credentials: Option<Credentials>,
 }
 
 impl Subscription {
+    fn new(
+        connection: GrpcClient,
+        retry: Option<RetryOptions>,
+        credentials: Option<Credentials>,
+        options: streams::read_req::Options,
+    ) -> Self {
+        let (limit, delay, retry_enabled) = if let Some(retry) = retry {
+            (retry.limit, retry.delay, true)
+        } else {
+            (1, Default::default(), false)
+        };
+
+        Self {
+            connection,
+            channel_id: uuid::Uuid::nil(),
+            limit,
+            delay,
+            retry_enabled,
+            options,
+            credentials,
+            stream: None,
+            attempts: 1,
+        }
+    }
+
+    pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<SubEvent<ResolvedEvent>>> {
+        try_stream! {
+            loop {
+                let event = self.next().await?;
+
+                yield event;
+            }
+        }
+    }
+
+    pub fn into_stream_of_events(mut self) -> impl Stream<Item = crate::Result<ResolvedEvent>> {
+        try_stream! {
+            loop {
+                let event = self.next_event().await?;
+                yield event;
+            }
+        }
+    }
+
     pub async fn next_event(&mut self) -> crate::Result<ResolvedEvent> {
-        todo!()
+        loop {
+            if let SubEvent::EventAppeared(event) = self.next().await? {
+                return Ok(event);
+            }
+        }
+    }
+
+    pub async fn next(&mut self) -> crate::Result<SubEvent<ResolvedEvent>> {
+        use streams::read_req::options::all_options::AllOption;
+        use streams::read_req::options::stream_options::RevisionOption;
+        use streams::read_req::options::{self, StreamOption};
+
+        loop {
+            if let Some(mut stream) = self.stream.take() {
+                match stream.try_next().await {
+                    Err(status) => {
+                        let e = crate::Error::from_grpc(status);
+                        handle_error(&self.connection.sender, self.channel_id, &e).await;
+                        self.attempts = 1;
+
+                        error!("Subscription dropped. cause: {}", e);
+
+                        if !self.retry_enabled {
+                            return Err(e);
+                        }
+                    }
+
+                    Ok(resp) => {
+                        if let Some(content) = resp.and_then(|r| r.content) {
+                            self.stream = Some(stream);
+
+                            match content {
+                                streams::read_resp::Content::Event(event) => {
+                                    let event = convert_proto_read_event(event);
+
+                                    let stream_options =
+                                        self.options.stream_option.as_mut().unwrap();
+
+                                    match stream_options {
+                                        StreamOption::Stream(stream_options) => {
+                                            let revision = RevisionOption::Revision(
+                                                event.get_original_event().revision as u64,
+                                            );
+                                            stream_options.revision_option = Some(revision);
+                                        }
+
+                                        StreamOption::All(all_options) => {
+                                            let position = event.get_original_event().position;
+                                            let position = options::Position {
+                                                prepare_position: position.prepare,
+                                                commit_position: position.commit,
+                                            };
+
+                                            all_options.all_option =
+                                                Some(AllOption::Position(position));
+                                        }
+                                    }
+
+                                    return Ok(SubEvent::EventAppeared(event));
+                                }
+
+                                streams::read_resp::Content::Confirmation(info) => {
+                                    return Ok(SubEvent::Confirmed(info.subscription_id))
+                                }
+
+                                streams::read_resp::Content::Checkpoint(chk) => {
+                                    let position = Position {
+                                        commit: chk.commit_position,
+                                        prepare: chk.prepare_position,
+                                    };
+
+                                    return Ok(SubEvent::Checkpoint(position));
+                                }
+
+                                streams::read_resp::Content::FirstStreamPosition(event_number) => {
+                                    return Ok(SubEvent::FirstStreamPosition(event_number));
+                                }
+
+                                streams::read_resp::Content::LastStreamPosition(event_number) => {
+                                    return Ok(SubEvent::LastStreamPosition(event_number));
+                                }
+
+                                streams::read_resp::Content::LastAllStreamPosition(position) => {
+                                    return Ok(SubEvent::LastAllPosition(Position {
+                                        commit: position.commit_position,
+                                        prepare: position.prepare_position,
+                                    }));
+                                }
+
+                                _ => unreachable!(),
+                            }
+                        }
+
+                        unreachable!()
+                    }
+                }
+            } else {
+                let handle = self.connection.current_selected_node().await?;
+
+                self.channel_id = handle.id();
+
+                let mut client = StreamsClient::new(handle.channel);
+                let mut req = Request::new(streams::ReadReq {
+                    options: Some(self.options.clone()),
+                });
+
+                configure_auth_req(&mut req, self.credentials.as_ref().cloned());
+
+                match client.read(req).await {
+                    Err(status) => {
+                        let e = crate::Error::from_grpc(status);
+
+                        handle_error(&self.connection.sender, self.channel_id, &e).await;
+
+                        if self.attempts < self.limit {
+                            error!(
+                                "Subscription: attempt ({}/{}) failure, cause: {}, retrying...",
+                                self.attempts, self.limit, e
+                            );
+                            self.attempts += 1;
+                            tokio::time::sleep(self.delay).await;
+
+                            continue;
+                        }
+
+                        if self.retry_enabled {
+                            error!(
+                                "Subscription: maximum retry threshold reached, cause: {}",
+                                e
+                            );
+                        }
+
+                        return Err(e);
+                    }
+
+                    Ok(stream) => {
+                        self.stream = Some(stream.into_inner());
+
+                        continue;
+                    }
+                }
+            }
+        }
     }
 }
 
 /// Runs the subscription command.
-pub fn subscribe_to_stream<'a, S: AsRef<str>>(
+pub fn subscribe_to_stream<S: AsRef<str>>(
     connection: GrpcClient,
     stream_id: S,
     options: &SubscribeToStreamOptions,
-) -> BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>> {
+) -> Subscription {
     use streams::read_req::options::stream_options::RevisionOption;
     use streams::read_req::options::{self, StreamOption, StreamOptions, SubscriptionOptions};
     use streams::read_req::Options;
@@ -1222,13 +1292,10 @@ pub fn subscribe_to_stream<'a, S: AsRef<str>>(
         read_direction,
     };
 
-    retryable_subscription(connection, retry, credentials, options)
+    Subscription::new(connection, retry, credentials, options)
 }
 
-pub fn subscribe_to_all<'a>(
-    connection: GrpcClient,
-    options: &SubscribeToAllOptions,
-) -> BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>> {
+pub fn subscribe_to_all(connection: GrpcClient, options: &SubscribeToAllOptions) -> Subscription {
     use streams::read_req::options::all_options::AllOption;
     use streams::read_req::options::{self, AllOptions, StreamOption, SubscriptionOptions};
     use streams::read_req::Options;
@@ -1273,7 +1340,7 @@ pub fn subscribe_to_all<'a>(
         read_direction,
     };
 
-    retryable_subscription(connection, retry, credentials, options)
+    Subscription::new(connection, retry, credentials, options)
 }
 
 /// This trait is used to avoid code duplication when introducing persistent subscription to $all. It

@@ -8,9 +8,9 @@ use crate::{
     commands, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
     GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions,
     PersistentSubscriptionInfo, PersistentSubscriptionToAllOptions, Position,
-    ReplayParkedMessagesOptions, ResolvedEvent, StreamMetadata, StreamMetadataResult, SubEvent,
-    SubscribeToAllOptions, SubscribeToPersistentSubscriptionn, SubscriptionRead, SubscriptionWrite,
-    ToCount, TombstoneStreamOptions, VersionedMetadata, WriteResult, WrongExpectedVersion,
+    ReplayParkedMessagesOptions, StreamMetadata, StreamMetadataResult, SubscribeToAllOptions,
+    SubscribeToPersistentSubscriptionn, Subscription, SubscriptionRead, SubscriptionWrite, ToCount,
+    TombstoneStreamOptions, VersionedMetadata, WriteResult, WrongExpectedVersion,
 };
 use crate::{
     grpc::{ClientSettings, GrpcClient},
@@ -20,7 +20,6 @@ use crate::{
     options::append_to_stream::{AppendToStreamOptions, ToEvents},
     EventData,
 };
-use futures::stream::BoxStream;
 
 /// Represents a client to a single node. `Client` maintains a full duplex
 /// communication to EventStoreDB.
@@ -108,7 +107,11 @@ impl Client {
 
     /// Reads events for the system stream `$all`. The reading can be done
     /// forward and backward.
-    pub async fn read_all<Count>(&self, options: &ReadAllOptions, count: Count) -> crate::Result<Count::Selection>
+    pub async fn read_all<Count>(
+        &self,
+        options: &ReadAllOptions,
+        count: Count,
+    ) -> crate::Result<Count::Selection>
     where
         Count: ToCount,
     {
@@ -197,21 +200,18 @@ impl Client {
     /// as the subscription is dropped or closed.
     ///
     /// [`subscribe_to_all`]: #method.subscribe_to_all_from
-    pub async fn subscribe_to_stream<'a>(
+    pub async fn subscribe_to_stream(
         &self,
         stream_name: impl AsRef<str>,
         options: &SubscribeToStreamOptions,
-    ) -> BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>> {
+    ) -> Subscription {
         commands::subscribe_to_stream(self.client.clone(), stream_name, options)
     }
 
     /// Like [`subscribe_to_stream`] but specific to system `$all` stream.
     ///
     /// [`subscribe_to_stream`]: #method.subscribe_to_stream
-    pub async fn subscribe_to_all<'a>(
-        &self,
-        options: &SubscribeToAllOptions,
-    ) -> BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>> {
+    pub async fn subscribe_to_all(&self, options: &SubscribeToAllOptions) -> Subscription {
         commands::subscribe_to_all(self.client.clone(), options)
     }
 

@@ -1045,6 +1045,10 @@ pub enum SubEvent<A> {
     /// Indicates a checkpoint has been created. Related to subscription to $all when
     /// filters are used.
     Checkpoint(Position),
+
+    FirstStreamPosition(u64),
+    LastStreamPosition(u64),
+    LastAllPosition(Position),
 }
 
 #[derive(Debug)]

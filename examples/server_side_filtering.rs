@@ -2,6 +2,7 @@
 #![allow(unused_imports)]
 #![allow(unused_results)]
 #![allow(unused_variables)]
+#![allow(unreachable_code)]
 
 use eventstore::{
     Client, Credentials, EventData, ExpectedRevision, SubEvent, SubscribeToAllOptions,
@@ -27,13 +28,12 @@ pub async fn exclude_system_events(client: &Client) -> Result<()> {
 
     let mut sub = client.subscribe_to_all(&options).await;
 
-    while let Some(event) = sub.try_next().await? {
-        if let SubEvent::EventAppeared(event) = event {
-            let stream_id = event.get_original_stream_id();
-            let revision = event.get_original_event().revision;
+    loop {
+        let event = sub.next_event().await?;
+        let stream_id = event.get_original_stream_id();
+        let revision = event.get_original_event().revision;
 
-            println!("Received event {}@{}", revision, stream_id);
-        }
+        println!("Received event {}@{}", revision, stream_id);
     }
     // endregion exclude-system
 
@@ -48,13 +48,12 @@ pub async fn event_type_prefix(client: &Client) -> Result<()> {
     let mut sub = client.subscribe_to_all(&options).await;
     // endregion event-type-prefix
 
-    while let Some(event) = sub.try_next().await? {
-        if let SubEvent::EventAppeared(event) = event {
-            let stream_id = event.get_original_stream_id();
-            let revision = event.get_original_event().revision;
+    loop {
+        let event = sub.next_event().await?;
+        let stream_id = event.get_original_stream_id();
+        let revision = event.get_original_event().revision;
 
-            println!("Received event {}@{}", revision, stream_id);
-        }
+        println!("Received event {}@{}", revision, stream_id);
     }
 
     Ok(())
@@ -68,13 +67,12 @@ pub async fn event_type_regex(client: &Client) -> Result<()> {
     let mut sub = client.subscribe_to_all(&options).await;
     // endregion event-type-regex
 
-    while let Some(event) = sub.try_next().await? {
-        if let SubEvent::EventAppeared(event) = event {
-            let stream_id = event.get_original_stream_id();
-            let revision = event.get_original_event().revision;
+    loop {
+        let event = sub.next_event().await?;
+        let stream_id = event.get_original_stream_id();
+        let revision = event.get_original_event().revision;
 
-            println!("Received event {}@{}", revision, stream_id);
-        }
+        println!("Received event {}@{}", revision, stream_id);
     }
 
     Ok(())
@@ -88,13 +86,12 @@ pub async fn stream_prefix(client: &Client) -> Result<()> {
     let mut sub = client.subscribe_to_all(&options).await;
     // endregion stream-prefix
 
-    while let Some(event) = sub.try_next().await? {
-        if let SubEvent::EventAppeared(event) = event {
-            let stream_id = event.get_original_stream_id();
-            let revision = event.get_original_event().revision;
+    loop {
+        let event = sub.next_event().await?;
+        let stream_id = event.get_original_stream_id();
+        let revision = event.get_original_event().revision;
 
-            println!("Received event {}@{}", revision, stream_id);
-        }
+        println!("Received event {}@{}", revision, stream_id);
     }
 
     Ok(())
@@ -108,13 +105,12 @@ pub async fn stream_regex(client: &Client) -> Result<()> {
     let mut sub = client.subscribe_to_all(&options).await;
     // endregion stream-regex
 
-    while let Some(event) = sub.try_next().await? {
-        if let SubEvent::EventAppeared(event) = event {
-            let stream_id = event.get_original_stream_id();
-            let revision = event.get_original_event().revision;
+    loop {
+        let event = sub.next_event().await?;
+        let stream_id = event.get_original_stream_id();
+        let revision = event.get_original_event().revision;
 
-            println!("Received event {}@{}", revision, stream_id);
-        }
+        println!("Received event {}@{}", revision, stream_id);
     }
 
     Ok(())
@@ -129,7 +125,8 @@ pub async fn checkpoint_callback_with_interval(client: &Client) -> Result<()> {
     // endregion checkpoint-with-interval
 
     // region checkpoint
-    while let Some(event) = sub.try_next().await? {
+    loop {
+        let event = sub.next().await?;
         match event {
             SubEvent::EventAppeared(event) => {
                 let stream_id = event.get_original_stream_id();

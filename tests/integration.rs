@@ -10,7 +10,6 @@ use eventstore::{
     StreamMetadataBuilder, StreamMetadataResult,
 };
 use futures::channel::oneshot;
-use futures::stream::TryStreamExt;
 use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
@@ -72,7 +71,9 @@ async fn test_read_stream_events(client: &Client) -> Result<(), Box<dyn Error>> 
     let mut pos = 0usize;
     let mut idx = 0i64;
 
-    let mut stream = client.read_stream(stream_id, &Default::default(), 10).await?;
+    let mut stream = client
+        .read_stream(stream_id, &Default::default(), 10)
+        .await?;
 
     while let Some(event) = stream.next_event().await? {
         let event = event.get_original_event();
@@ -226,13 +227,12 @@ async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
         let mut count = 0usize;
         let max = 6usize;
 
-        while let Some(event) = sub.try_next().await? {
-            if let eventstore::SubEvent::EventAppeared(_) = event {
-                count += 1;
+        loop {
+            sub.next_event().await?;
+            count += 1;
 
-                if count == max {
-                    break;
-                }
+            if count == max {
+                break;
             }
         }
 
@@ -918,7 +918,8 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
     tokio::spawn(async move {
         let mut count = 0usize;
 
-        while let Some(_) = stream.try_next().await? {
+        loop {
+            stream.next_event().await?;
             count += 1;
 
             if count == max {

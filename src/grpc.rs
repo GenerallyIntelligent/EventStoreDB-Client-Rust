@@ -667,6 +667,8 @@ fn cluster_mode(conn_setts: ClientSettings) -> UnboundedSender<Msg> {
                                     conn_setts.max_discover_attempts(),
                                 )));
 
+                            // FIXME - When we reached the max discovery attempt we should close
+                            // the entire connection!
                             discovery_att_count = 0;
                         } else {
                             // It means we need to create a new channel.

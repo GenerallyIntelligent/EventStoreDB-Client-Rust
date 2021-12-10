@@ -2,6 +2,8 @@
 #![allow(unused_imports)]
 #![allow(unused_results)]
 #![allow(unused_variables)]
+#![allow(unused_variables)]
+#![allow(unreachable_code)]
 
 use eventstore::{
     Client, Credentials, EventData, ExpectedRevision, Position, RetryOptions, StreamPosition,
@@ -20,10 +22,9 @@ pub async fn subscribe_to_stream(client: &Client) -> Result<()> {
         .subscribe_to_stream("some-stream", &Default::default())
         .await;
 
-    while let Some(event) = stream.try_next().await? {
-        if let SubEvent::EventAppeared(event) = event {
-            // Handles the event...
-        }
+    loop {
+        let event = stream.next_event().await?;
+        // Handles the event...
     }
     // endregion subscribe-to-stream
 
@@ -53,10 +54,9 @@ pub async fn subscribe_to_stream(client: &Client) -> Result<()> {
     let options = SubscribeToStreamOptions::default().retry_options(retry);
     let mut stream = client.subscribe_to_stream("some-stream", &options).await;
 
-    while let Some(event) = stream.try_next().await? {
-        if let SubEvent::EventAppeared(event) = event {
-            // Handles the event...
-        }
+    loop {
+        let event = stream.next_event().await?;
+        // Handles the event...
     }
     // endregion subscribe-to-stream-subscription-dropped
 
@@ -67,11 +67,11 @@ pub async fn subscribe_to_all(client: &Client) -> Result<()> {
     // region subscribe-to-all
     let mut stream = client.subscribe_to_all(&Default::default()).await;
 
-    while let Some(event) = stream.try_next().await? {
-        if let SubEvent::EventAppeared(event) = event {
-            // Handles the event...
-        }
+    loop {
+        let event = stream.next_event().await?;
+        // Handles the event...
     }
+
     // endregion subscribe-to-all
 
     // region subscribe-to-all-from-position
@@ -93,11 +93,11 @@ pub async fn subscribe_to_all(client: &Client) -> Result<()> {
     let options = SubscribeToAllOptions::default().retry_options(retry);
     let mut stream = client.subscribe_to_all(&options).await;
 
-    while let Some(event) = stream.try_next().await? {
-        if let SubEvent::EventAppeared(event) = event {
-            // Handles the event...
-        }
+    loop {
+        let event = stream.next_event().await?;
+        // Handles the event...
     }
+
     // endregion subscribe-to-all-subscription-dropped
 
     Ok(())
