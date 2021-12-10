@@ -145,7 +145,7 @@ async fn test_read_stream_events_non_existent(client: &Client) -> Result<(), Box
 
     let result = client
         .read_stream(stream_id.as_str(), &Default::default(), Single)
-        .await;
+        .await?;
 
     if let Err(eventstore::Error::ResourceNotFound) = result {
         return Ok(());
