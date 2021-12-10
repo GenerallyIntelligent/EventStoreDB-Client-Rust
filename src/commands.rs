@@ -1712,6 +1712,7 @@ fn to_proto_uuid(id: uuid::Uuid) -> Uuid {
     }
 }
 
+#[derive(Clone)]
 pub struct SubscriptionWrite {
     sender: futures::channel::mpsc::Sender<persistent::ReadReq>,
 }
