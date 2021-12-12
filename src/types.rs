@@ -207,7 +207,7 @@ pub struct ReadEventResult {
 }
 
 /// Represents a previously written event.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecordedEvent {
     /// The event stream that events belongs to.
     pub stream_id: String,
@@ -248,7 +248,7 @@ impl RecordedEvent {
 }
 
 /// A structure representing a single event or an resolved link event.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ResolvedEvent {
     /// The event, or the resolved link event if this `ResolvedEvent` is a link
     /// event.
@@ -1048,7 +1048,7 @@ pub enum SubEvent<A> {
     Checkpoint(Position),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PersistentSubEvent {
     pub event: ResolvedEvent,
     pub retry_count: usize,
